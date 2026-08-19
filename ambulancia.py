@@ -1,9 +1,11 @@
 import os
 import json
+import html
 import tempfile
 import time
 
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from google import genai
 
@@ -37,17 +39,43 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("Neurologický AI Asistent – prototyp 0.6")
+st.markdown(
+    """
+    <style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        max-width: 1200px;
+    }
+    h1 {
+        font-size: 2.0rem !important;
+    }
+    h2 {
+        font-size: 1.35rem !important;
+    }
+    h3 {
+        font-size: 1.15rem !important;
+    }
+    .stTextArea textarea {
+        font-size: 15px !important;
+        line-height: 1.45 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.title("Neurologický AI Asistent")
 
 
 PREFERRED_MODELS = [
+    "models/gemini-flash-lite-latest",
     "models/gemini-flash-latest",
     "models/gemini-3.6-flash",
     "models/gemini-3.5-flash",
     "models/gemini-3.1-flash-lite",
     "models/gemini-2.0-flash",
     "models/gemini-2.0-flash-001",
-    "models/gemini-flash-lite-latest",
     "models/gemini-pro-latest",
     "models/gemini-3-pro-preview",
 ]
@@ -132,52 +160,137 @@ if not default_model:
     st.stop()
 
 
-BUILT_IN_TEMPLATES = {
-    "Ambulancia - vstupné": """
-Anamnéza:
-[stručne anamnestické údaje relevantné k vyšetreniu, vrátane TO, OA, LA, AA, RA podľa dostupnosti]
+DEFAULT_TEMPLATES = {
+    "Ambulancia - vstupné": """Indikácia:
+
+TO:
+
+OA:
+
+LA:
+
+AA:
+
+RA:
 
 Objektívne neurologicky:
-[objektívny neurologický nález, iba ak bol uvedený alebo nadiktovaný]
 
 Doplňujúce vyšetrenia:
-[laboratórne výsledky, CT/MR/RTG/EEG/EMG a iné výsledky iba ak boli uvedené]
+
+Záver:
+
+Odporúčanie:
 """,
-    "Ambulancia - kontrolné": """
-Subjektívne od poslednej kontroly:
-[aktuálny stav, vývoj ťažkostí, tolerancia liečby, nové príznaky]
+    "Ambulancia - kontrolné": """Subjektívne od poslednej kontroly:
+
+Aktuálne ťažkosti:
+
+Liečba a tolerancia:
 
 Objektívne neurologicky:
-[objektívny neurologický nález, iba ak bol uvedený alebo nadiktovaný]
 
 Doplňujúce vyšetrenia:
-[laboratórne výsledky, CT/MR/RTG/EEG/EMG a iné výsledky iba ak boli uvedené]
+
+Záver:
+
+Odporúčanie:
 """,
-    "CPO konzílium": """
-Anamnéza aktuálnych ťažkostí:
-[akútne ťažkosti, čas vzniku, priebeh, pozitívne a negované príznaky]
+    "CPO konzílium": """Indikácia:
+
+TO:
+
+OA:
+
+LA:
+
+AA:
 
 Objektívne neurologicky:
-[objektívny neurologický nález, iba ak bol uvedený alebo nadiktovaný]
 
 Doplňujúce vyšetrenia:
-[laboratórne výsledky, CT/MR/RTG/EEG/EMG a iné výsledky iba ak boli uvedené]
+
+Záver:
+
+Odporúčanie:
 """,
-    "Príjem na hospitalizáciu": """
-Príjmová anamnéza:
-[dôvod prijatia a relevantná anamnéza]
+    "Príjem na hospitalizáciu": """Dôvod prijatia:
+
+TO:
+
+OA:
+
+LA:
+
+AA:
+
+RA:
 
 Objektívne neurologicky:
-[objektívny neurologický nález, iba ak bol uvedený alebo nadiktovaný]
 
 Doplňujúce vyšetrenia:
-[laboratórne výsledky, CT/MR/RTG/EEG/EMG a iné výsledky iba ak boli uvedené]
+
+Záver:
+
+Plán:
 """
 }
 
 
-if "custom_templates" not in st.session_state:
-    st.session_state.custom_templates = {}
+if "templates" not in st.session_state:
+    st.session_state.templates = DEFAULT_TEMPLATES.copy()
+
+if "last_output" not in st.session_state:
+    st.session_state.last_output = ""
+
+if "last_main_output" not in st.session_state:
+    st.session_state.last_main_output = ""
+
+if "last_detail_output" not in st.session_state:
+    st.session_state.last_detail_output = ""
+
+
+def extract_between_markers(text, start_marker, end_marker=None):
+    if not text:
+        return ""
+
+    if start_marker not in text:
+        return ""
+
+    part = text.split(start_marker, 1)[1]
+
+    if end_marker and end_marker in part:
+        part = part.split(end_marker, 1)[0]
+
+    return part.strip()
+
+
+def copy_button(text_to_copy, button_text="Kopírovať hlavný výstup"):
+    safe_text = json.dumps(text_to_copy)
+
+    components.html(
+        f"""
+        <button
+            onclick='navigator.clipboard.writeText({safe_text}).then(() => {{
+                const el = document.getElementById("copy-status");
+                el.innerText = "Skopírované";
+                setTimeout(() => el.innerText = "", 2000);
+            }})'
+            style="
+                background-color: #0f6fff;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 0.55rem 0.9rem;
+                font-size: 0.95rem;
+                cursor: pointer;
+            "
+        >
+            {html.escape(button_text)}
+        </button>
+        <span id="copy-status" style="margin-left: 12px; color: green; font-size: 0.95rem;"></span>
+        """,
+        height=55
+    )
 
 
 st.sidebar.header("Nastavenie prípadu")
@@ -190,17 +303,12 @@ rezim = st.sidebar.radio(
     ]
 )
 
-all_template_names = list(BUILT_IN_TEMPLATES.keys()) + list(st.session_state.custom_templates.keys())
+template_names = list(st.session_state.templates.keys())
 
 selected_template_name = st.sidebar.selectbox(
     "Typ vyšetrenia / predloha:",
-    all_template_names
+    template_names
 )
-
-if selected_template_name in BUILT_IN_TEMPLATES:
-    selected_template_text = BUILT_IN_TEMPLATES[selected_template_name]
-else:
-    selected_template_text = st.session_state.custom_templates[selected_template_name]
 
 model = st.sidebar.selectbox(
     "Model:",
@@ -208,49 +316,81 @@ model = st.sidebar.selectbox(
     index=available_models.index(default_model)
 )
 
+st.sidebar.caption("Pre rýchlosť je vhodný flash-lite/latest. Pre kvalitu môžeš skúsiť silnejší model.")
 
-with st.expander("Vlastné predlohy", expanded=False):
-    st.write("Tu si môžete pridať vlastnú predlohu výstupu.")
 
-    new_template_name = st.text_input("Názov novej predlohy")
+st.sidebar.markdown("---")
+st.sidebar.subheader("Predlohy")
 
-    new_template_body = st.text_area(
-        "Text predlohy",
-        height=220,
-        placeholder="Napríklad:\n\nAnamnéza:\n...\n\nObjektívne neurologicky:\n...\n\nDoplňujúce vyšetrenia:\n..."
+template_action = st.sidebar.radio(
+    "Akcia:",
+    [
+        "Použiť / upraviť predlohu",
+        "Pridať novú predlohu",
+        "Import / export predlôh"
+    ]
+)
+
+if template_action == "Použiť / upraviť predlohu":
+    st.sidebar.write(f"Aktuálna predloha: {selected_template_name}")
+
+    edited_template = st.sidebar.text_area(
+        "Upraviť text predlohy:",
+        value=st.session_state.templates[selected_template_name],
+        height=340
     )
 
-    if st.button("Pridať predlohu"):
-        if not new_template_name.strip():
-            st.error("Zadajte názov predlohy.")
-        elif not new_template_body.strip():
-            st.error("Zadajte text predlohy.")
-        else:
-            st.session_state.custom_templates[new_template_name.strip()] = new_template_body.strip()
-            st.success(f"Predloha pridaná: {new_template_name.strip()}")
+    if st.sidebar.button("Uložiť úpravu predlohy"):
+        st.session_state.templates[selected_template_name] = edited_template
+        st.sidebar.success("Predloha uložená.")
+        st.rerun()
+
+    if selected_template_name not in DEFAULT_TEMPLATES:
+        if st.sidebar.button("Vymazať túto vlastnú predlohu"):
+            del st.session_state.templates[selected_template_name]
+            st.sidebar.success("Predloha vymazaná.")
             st.rerun()
 
-    if st.session_state.custom_templates:
-        st.write("Aktuálne vlastné predlohy:")
+if template_action == "Pridať novú predlohu":
+    new_template_name = st.sidebar.text_input("Názov novej predlohy")
 
-        for name in st.session_state.custom_templates:
-            st.write(f"- {name}")
+    new_template_body = st.sidebar.text_area(
+        "Text novej predlohy:",
+        height=340,
+        placeholder="Napríklad:\n\nAnamnéza:\n\nObjektívne neurologicky:\n\nDoplňujúce vyšetrenia:\n\nZáver:\n\nOdporúčanie:"
+    )
 
-        templates_json = json.dumps(
-            st.session_state.custom_templates,
-            ensure_ascii=False,
-            indent=2
-        )
+    if st.sidebar.button("Vytvoriť novú predlohu"):
+        name = new_template_name.strip()
+        body = new_template_body.strip()
 
-        st.download_button(
-            label="Stiahnuť moje predlohy ako JSON",
-            data=templates_json,
-            file_name="moje_predlohy.json",
-            mime="application/json"
-        )
+        if not name:
+            st.sidebar.error("Zadajte názov predlohy.")
+        elif not body:
+            st.sidebar.error("Zadajte text predlohy.")
+        elif name in st.session_state.templates:
+            st.sidebar.error("Predloha s týmto názvom už existuje.")
+        else:
+            st.session_state.templates[name] = body
+            st.sidebar.success(f"Predloha vytvorená: {name}")
+            st.rerun()
 
-    uploaded_templates = st.file_uploader(
-        "Nahrať uložené predlohy JSON",
+if template_action == "Import / export predlôh":
+    templates_json = json.dumps(
+        st.session_state.templates,
+        ensure_ascii=False,
+        indent=2
+    )
+
+    st.sidebar.download_button(
+        label="Stiahnuť predlohy ako JSON",
+        data=templates_json,
+        file_name="predlohy_neuro_ai.json",
+        mime="application/json"
+    )
+
+    uploaded_templates = st.sidebar.file_uploader(
+        "Nahrať predlohy JSON",
         type=["json"]
     )
 
@@ -259,14 +399,25 @@ with st.expander("Vlastné predlohy", expanded=False):
             loaded = json.load(uploaded_templates)
 
             if not isinstance(loaded, dict):
-                st.error("JSON musí obsahovať objekt: názov predlohy → text predlohy.")
+                st.sidebar.error("JSON musí byť objekt: názov predlohy → text predlohy.")
             else:
-                st.session_state.custom_templates.update(loaded)
-                st.success("Predlohy boli nahraté.")
-                st.rerun()
+                cleaned = {}
+                for key, value in loaded.items():
+                    if isinstance(key, str) and isinstance(value, str):
+                        cleaned[key] = value
+
+                if not cleaned:
+                    st.sidebar.error("V JSON sa nenašli použiteľné predlohy.")
+                else:
+                    st.session_state.templates.update(cleaned)
+                    st.sidebar.success("Predlohy boli nahraté.")
+                    st.rerun()
 
         except Exception as e:
-            st.error(f"Nepodarilo sa načítať JSON: {e}")
+            st.sidebar.error(f"Nepodarilo sa načítať JSON: {e}")
+
+
+selected_template_text = st.session_state.templates[selected_template_name]
 
 
 st.subheader("1. Súhlas pacienta")
@@ -311,13 +462,14 @@ Si asistent neurológa v slovenskej ambulancii / nemocnici.
 
 Cieľ:
 - Pomôcť lekárovi zdokumentovať vyšetrenie.
-- Výstup má byť praktický, stručný a pripravený na copy-paste do MIS.
+- Výstup má byť praktický, klinicky prirodzený, slovenský, v štýle UNB/Kramáre.
 - Lekár zostáva plne zodpovedný za finálnu kontrolu.
+- Nevymýšľaj si fakty.
 
-Typ vyšetrenia / predloha:
+Typ vyšetrenia / použitá predloha:
 {template_name}
 
-Použitá predloha hlavného výstupu:
+Predloha:
 {template_text}
 
 Režim:
@@ -326,76 +478,78 @@ Režim:
 Manuálne doplnený kontext / poznámky:
 {manual_context}
 
-Najprv uveď HLAVNÝ VÝSTUP NA KOPÍROVANIE DO MIS.
-Až potom uveď krátku kontrolnú časť.
+DÔLEŽITÉ:
+Výstup musí byť v tomto poradí:
 
-============================================================
-HLAVNÝ VÝSTUP NA KOPÍROVANIE DO MIS
-============================================================
+<<<HLAVNY_VYSTUP>>>
+Tu daj hlavný text na kopírovanie do MIS.
+Použi štruktúru predlohy.
+Toto je najdôležitejšia časť a musí byť úplne hore.
 
-V tejto hlavnej časti použi predlohu vyššie.
+<<<DETAILNA_ANALYZA>>>
+Tu daj až potom kroky 1–3 a 5.
 
-Do hlavného výstupu zahrň iba:
-- anamnézu,
-- subjektívne ťažkosti,
-- objektívny / neurologický nález,
-- výsledky laboratórnych, zobrazovacích alebo iných doplňujúcich vyšetrení, ak boli uvedené.
-
-V hlavnom výstupe NEUVÁDZAJ:
-- diagnózu,
-- diferenciálnu diagnostiku,
-- odporúčania,
-- plán,
-- liečbu,
-- návrhy ďalších vyšetrení,
-pokiaľ nie sú priamo súčasťou vloženej predlohy ako samostatné sekcie. Ak sú v predlohe, ale neboli explicitne uvedené, napíš „Na doplnenie lekárom.“
-
-FORMÁTOVANIE HLAVNÉHO VÝSTUPU:
-- Každý nadpis predlohy musí byť na samostatnom riadku.
+HLAVNÝ VÝSTUP:
+- Použi presne klinickú štruktúru podľa predlohy.
+- Každý nadpis musí byť na samostatnom riadku.
 - Text pod nadpisom musí byť na novom riadku.
 - Medzi sekciami nechaj jeden prázdny riadok.
 - Nespájaj viacero hlavičiek do jedného odseku.
-- Nepíš zbytočné vysvetľujúce formulácie.
-- Zachovaj slovenský neurologický štýl UNB/Kramáre.
+- Nepoužívaj veľké nadpisy s dlhými vysvetleniami.
+- Nepíš meta-komentáre typu „toto je hlavný výstup“ do samotnej správy.
+- Ak lekár explicitne povedal záver, uveď ho v sekcii Záver.
+- Ak lekár explicitne povedal odporúčanie/plán, uveď ho v sekcii Odporúčanie alebo Plán.
+- Ak záver, odporúčanie alebo plán nebol explicitne povedaný, napíš v danej sekcii: „Na doplnenie lekárom.“
+- V hlavnom výstupe nevymýšľaj diagnózu, odporúčania, lieky, CT, MR, labáky ani kontroly.
 
 PRÍSNE PRAVIDLÁ:
 - Nevymýšľaj si fakty.
-- Nevymýšľaj si diagnózy.
 - Nevymýšľaj si lieky ani dávkovanie.
 - Nevymýšľaj si normálny neurologický nález, ak nebol uvedený.
-- Nevymýšľaj si odporúčania, MR, CT, laboratóriá, liečbu ani kontroly, ak ich lekár nepovedal.
 - Zachovaj negácie.
 - Nezamieňaj subjektívne ťažkosti za objektívny nález.
 - Nepridávaj časti vyšetrenia, ktoré neboli uvedené.
-- Ak informácia chýba, napíš „neudané“ alebo sekciu ponechaj stručnú.
+- Výsledky CT/MR/lab/EEG/EMG uveď iba vtedy, ak boli uvedené v zdrojovom texte alebo audiu.
 
-============================================================
-KONTROLNÁ ČASŤ PRE LEKÁRA
-============================================================
+DETAILNÁ ANALÝZA:
+Daj ju až za hlavný výstup.
 
-Túto časť daj až za hlavný výstup a urob ju krátku.
+KROK 1 — TRANSKRIPT:
+- Vytvor čo najpresnejší slovenský transkript.
+- Ak ide iba o manuálny text bez audia, napíš, že audio nebolo poskytnuté a pracuješ s manuálnym textom.
+- Ak ide o diktát lekára, označ hovoriaceho ako Lekár / diktát.
+- Ak ide o rozhovor, rozdeľ hovoriacich ako Speaker 1, Speaker 2, Speaker 3.
+- Ak vieš, doplň približné časové úseky.
+- Nesumarizuj v tomto kroku.
 
-Uveď maximálne tieto podsekcie:
+KROK 2 — INFERENCIA ROLÍ:
+- Urči, kto je pravdepodobne Lekár, Pacient, Príbuzný alebo Iná osoba.
+- Uveď mieru istoty: vysoká / stredná / nízka.
+- Krátko vysvetli prečo.
+- Ak ide iba o diktát lekára alebo manuálne poznámky, napíš to jasne.
 
-1. Krátky technický súhrn:
-- zdroj: audio / manuálny text / audio + manuálny text,
-- pravdepodobné role hovoriacich: lekár / pacient / príbuzný, ak sa dali určiť.
+KROK 3 — KLINICKÉ FAKTY:
+Vypíš fakty, ktoré boli uvedené:
+- hlavný dôvod vyšetrenia,
+- začiatok a trvanie ťažkostí,
+- priebeh,
+- sprievodné príznaky,
+- negované príznaky,
+- osobná anamnéza,
+- lieková anamnéza,
+- alergie,
+- rodinná anamnéza,
+- objektívny neurologický nález,
+- výsledky laboratórnych, zobrazovacích alebo iných doplňujúcich vyšetrení,
+- záver, ak bol explicitne uvedený,
+- odporúčanie alebo plán, ak boli explicitne uvedené.
 
-2. Diagnóza / záver:
-- iba ak bol explicitne uvedený lekárom alebo jasne vyplýval z diktátu lekára,
-- ak nebol uvedený, napíš: „Na doplnenie lekárom.“
-
-3. Odporúčanie / plán:
-- iba ak bolo explicitne uvedené lekárom,
-- ak nebolo uvedené, napíš: „Na doplnenie lekárom.“
-
-4. Neistoty:
-- uveď iba 1–4 krátke body,
-- čo bolo zle počuteľné,
-- čo chýba,
-- čo musí lekár skontrolovať.
-
-V kontrolnej časti nenavrhuj nové diagnózy, vyšetrenia ani liečbu, ak neboli uvedené v zdrojovom texte.
+KROK 5 — KONTROLA KVALITY / NEISTOTY:
+- čo bolo zle počuteľné alebo chýbalo,
+- kde je neistá identifikácia hovoriaceho,
+- ktoré medicínske výrazy si vyžadujú kontrolu,
+- ktoré časti správy musí lekár overiť.
+- Nenavrhuj nové diagnózy, vyšetrenia ani liečbu, ak neboli uvedené v zdrojovom texte.
 """
 
 
@@ -441,24 +595,33 @@ if process_clicked:
                 available_models=available_models
             )
 
+            output_text = response.text or ""
+
+            main_output = extract_between_markers(
+                output_text,
+                "<<<HLAVNY_VYSTUP>>>",
+                "<<<DETAILNA_ANALYZA>>>"
+            )
+
+            detail_output = extract_between_markers(
+                output_text,
+                "<<<DETAILNA_ANALYZA>>>",
+                None
+            )
+
+            if not main_output:
+                main_output = output_text
+
+            st.session_state.last_output = output_text
+            st.session_state.last_main_output = main_output
+            st.session_state.last_detail_output = detail_output
+
             st.success(f"Spracovanie dokončené. Použitý model: {used_model}")
 
             if fallback_errors:
                 with st.expander("Fallback pokusy / chyby modelov"):
                     for err in fallback_errors:
                         st.text(err)
-
-            output_text = response.text
-
-            st.subheader("Výstup")
-            st.markdown(output_text)
-
-            st.download_button(
-                label="Stiahnuť výstup ako TXT",
-                data=output_text,
-                file_name="neurologicka_sprava.txt",
-                mime="text/plain"
-            )
 
         except Exception as e:
             st.error(f"Nastala chyba pri spracovaní: {e}")
@@ -476,6 +639,32 @@ if process_clicked:
                 except Exception:
                     pass
 
+
+if st.session_state.last_main_output:
+    st.subheader("4. Výstup na kopírovanie do MIS")
+
+    st.text_area(
+        "Hlavný výstup",
+        value=st.session_state.last_main_output,
+        height=360
+    )
+
+    copy_button(st.session_state.last_main_output)
+
+    st.download_button(
+        label="Stiahnuť hlavný výstup ako TXT",
+        data=st.session_state.last_main_output,
+        file_name="hlavny_vystup.txt",
+        mime="text/plain"
+    )
+
+if st.session_state.last_detail_output:
+    with st.expander("Detailná analýza, transkript a kontrola kvality", expanded=False):
+        st.markdown(st.session_state.last_detail_output)
+
+if st.session_state.last_output:
+    with st.expander("Celý surový výstup modelu", expanded=False):
+        st.markdown(st.session_state.last_output)
 
 with st.expander("Technické info"):
     st.write("Vybraný model:", model)
