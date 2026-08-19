@@ -45,16 +45,19 @@ st.markdown(
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
-        max-width: 1200px;
+        max-width: 1150px;
     }
     h1 {
-        font-size: 2.0rem !important;
+        font-size: 2rem !important;
+        font-weight: 650 !important;
     }
     h2 {
         font-size: 1.35rem !important;
+        font-weight: 600 !important;
     }
     h3 {
-        font-size: 1.15rem !important;
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
     }
     .stTextArea textarea {
         font-size: 15px !important;
@@ -68,16 +71,20 @@ st.markdown(
 st.title("Neurologický AI Asistent")
 
 
+# ============================================================
+# MODELY
+# ============================================================
+
 PREFERRED_MODELS = [
-    "models/gemini-flash-lite-latest",
     "models/gemini-flash-latest",
     "models/gemini-3.6-flash",
     "models/gemini-3.5-flash",
+    "models/gemini-pro-latest",
+    "models/gemini-3-pro-preview",
+    "models/gemini-flash-lite-latest",
     "models/gemini-3.1-flash-lite",
     "models/gemini-2.0-flash",
     "models/gemini-2.0-flash-001",
-    "models/gemini-pro-latest",
-    "models/gemini-3-pro-preview",
 ]
 
 
@@ -159,6 +166,10 @@ if not default_model:
     st.error("Nepodarilo sa vybrať vhodný model.")
     st.stop()
 
+
+# ============================================================
+# PREDLOHY
+# ============================================================
 
 DEFAULT_TEMPLATES = {
     "Ambulancia - vstupné": """Indikácia:
@@ -293,6 +304,10 @@ def copy_button(text_to_copy, button_text="Kopírovať hlavný výstup"):
     )
 
 
+# ============================================================
+# SIDEBAR
+# ============================================================
+
 st.sidebar.header("Nastavenie prípadu")
 
 rezim = st.sidebar.radio(
@@ -316,8 +331,9 @@ model = st.sidebar.selectbox(
     index=available_models.index(default_model)
 )
 
-st.sidebar.caption("Pre rýchlosť je vhodný flash-lite/latest. Pre kvalitu môžeš skúsiť silnejší model.")
-
+st.sidebar.caption(
+    "Defaultne sa preferuje gemini-flash-latest. Lite modely sú rýchlejšie, ale horšie klinicky upravujú text."
+)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Predlohy")
@@ -325,17 +341,17 @@ st.sidebar.subheader("Predlohy")
 template_action = st.sidebar.radio(
     "Akcia:",
     [
-        "Použiť / upraviť predlohu",
+        "Pozrieť / upraviť predlohu",
         "Pridať novú predlohu",
         "Import / export predlôh"
     ]
 )
 
-if template_action == "Použiť / upraviť predlohu":
+if template_action == "Pozrieť / upraviť predlohu":
     st.sidebar.write(f"Aktuálna predloha: {selected_template_name}")
 
     edited_template = st.sidebar.text_area(
-        "Upraviť text predlohy:",
+        "Text predlohy:",
         value=st.session_state.templates[selected_template_name],
         height=340
     )
@@ -357,7 +373,14 @@ if template_action == "Pridať novú predlohu":
     new_template_body = st.sidebar.text_area(
         "Text novej predlohy:",
         height=340,
-        placeholder="Napríklad:\n\nAnamnéza:\n\nObjektívne neurologicky:\n\nDoplňujúce vyšetrenia:\n\nZáver:\n\nOdporúčanie:"
+        placeholder=(
+            "Napríklad:\n\n"
+            "Anamnéza:\n\n"
+            "Objektívne neurologicky:\n\n"
+            "Doplňujúce vyšetrenia:\n\n"
+            "Záver:\n\n"
+            "Odporúčanie:"
+        )
     )
 
     if st.sidebar.button("Vytvoriť novú predlohu"):
@@ -420,6 +443,10 @@ if template_action == "Import / export predlôh":
 selected_template_text = st.session_state.templates[selected_template_name]
 
 
+# ============================================================
+# HLAVNÉ UI
+# ============================================================
+
 st.subheader("1. Súhlas pacienta")
 
 consent = st.radio(
@@ -451,6 +478,10 @@ manual_text = st.text_area(
 )
 
 
+# ============================================================
+# PROMPT
+# ============================================================
+
 def build_prompt(
     template_name: str,
     template_text: str,
@@ -458,18 +489,19 @@ def build_prompt(
     manual_context: str = ""
 ) -> str:
     return f"""
-Si asistent neurológa v slovenskej ambulancii / nemocnici.
+Si skúsený slovenský neurologický klinický asistent.
 
-Cieľ:
-- Pomôcť lekárovi zdokumentovať vyšetrenie.
-- Výstup má byť praktický, klinicky prirodzený, slovenský, v štýle UNB/Kramáre.
+Tvoj cieľ:
+- Premeň neupravený slovenský lekársky diktát alebo rozhovor lekár-pacient na kvalitnú neurologickú dokumentáciu.
+- Výstup musí byť klinicky prirodzený, nie doslovný prepis.
+- Výstup má byť vhodný na copy-paste do slovenského nemocničného / ambulantného informačného systému.
+- Štýl: vecný, odborný, slovenský, UNB/Kramáre.
 - Lekár zostáva plne zodpovedný za finálnu kontrolu.
-- Nevymýšľaj si fakty.
 
 Typ vyšetrenia / použitá predloha:
 {template_name}
 
-Predloha:
+Predloha hlavného výstupu:
 {template_text}
 
 Režim:
@@ -478,41 +510,86 @@ Režim:
 Manuálne doplnený kontext / poznámky:
 {manual_context}
 
-DÔLEŽITÉ:
-Výstup musí byť v tomto poradí:
+DÔLEŽITÉ PORADIE:
+Najprv musí byť hlavný klinický výstup.
+Až potom detailná analýza.
 
+Použi presne tieto značky:
 <<<HLAVNY_VYSTUP>>>
-Tu daj hlavný text na kopírovanie do MIS.
-Použi štruktúru predlohy.
-Toto je najdôležitejšia časť a musí byť úplne hore.
+[sem daj hlavný výstup]
 
 <<<DETAILNA_ANALYZA>>>
-Tu daj až potom kroky 1–3 a 5.
+[sem daj transkript, klinické fakty a kontrolu kvality]
 
-HLAVNÝ VÝSTUP:
-- Použi presne klinickú štruktúru podľa predlohy.
-- Každý nadpis musí byť na samostatnom riadku.
-- Text pod nadpisom musí byť na novom riadku.
-- Medzi sekciami nechaj jeden prázdny riadok.
-- Nespájaj viacero hlavičiek do jedného odseku.
-- Nepoužívaj veľké nadpisy s dlhými vysvetleniami.
-- Nepíš meta-komentáre typu „toto je hlavný výstup“ do samotnej správy.
+============================================================
+HLAVNÝ VÝSTUP
+============================================================
+
+Hlavný výstup nie je transkript.
+Je to upravená lekárska správa.
+
+V hlavnom výstupe:
+- použi štruktúru predlohy,
+- oprav diktát do štandardnej lekárskej formulácie,
+- odstráň výplňové slová a preklepy diktátu,
+- odstráň opravy typu „sori“, „teda“, „vlastne“, „ako keby“, ak nie sú medicínsky dôležité,
+- neopisuj neistoty z diktátu do hlavného textu, ale daj ich do detailnej analýzy,
+- zachovaj význam,
+- zachovaj negácie,
+- nepíš doslovný neupravený prepis,
+- nerozdeľuj text mechanicky, ale klinicky logicky.
+
+FORMÁTOVANIE:
+- každý nadpis predlohy musí byť na samostatnom riadku,
+- text pod nadpisom musí byť na novom riadku,
+- medzi sekciami nechaj jeden prázdny riadok,
+- nespájaj viacero hlavičiek do jedného odseku,
+- nepoužívaj odrážky v hlavnej správe, ak to nie je nutné.
+
+KLINICKÁ NORMALIZÁCIA:
+- „lasek“, „Laség“, „Lasegue“ normalizuj ako „Lasègue“,
+- „emery“, „MRka“, „emrika“ normalizuj ako „MR“ alebo „MR LS chrbtice“, ak z kontextu vyplýva LS chrbtica,
+- „sendomotorický“ oprav na „senzomotorický“,
+- „senzibilne vypadnutý dermatom“ uprav ako „senzitívny deficit / hypestézia v dermatóme ...“,
+- „M35“, „M 3 5“, „3 z 5“ interpretuj ako svalová sila 3/5, ak kontext sedí,
+- „skudexu“, „skúdeksu“, „Skudexu“ oprav ako „Skudexa“, ak ide o liek proti bolesti; dávku nechaj iba ak bola jasne uvedená,
+- ak je výraz neistý, v hlavnom texte použi najpravdepodobnejšiu klinickú formuláciu a neistotu uveď dole v detailnej analýze.
+
+PRAVIDLÁ PRE ZÁVER A ODPORÚČANIE:
 - Ak lekár explicitne povedal záver, uveď ho v sekcii Záver.
-- Ak lekár explicitne povedal odporúčanie/plán, uveď ho v sekcii Odporúčanie alebo Plán.
-- Ak záver, odporúčanie alebo plán nebol explicitne povedaný, napíš v danej sekcii: „Na doplnenie lekárom.“
-- V hlavnom výstupe nevymýšľaj diagnózu, odporúčania, lieky, CT, MR, labáky ani kontroly.
+- Ak lekár explicitne povedal odporúčanie alebo plán, uveď ho v sekcii Odporúčanie alebo Plán.
+- Ak záver nebol explicitne uvedený, napíš v sekcii Záver: „Na doplnenie lekárom.“
+- Ak odporúčanie/plán nebol explicitne uvedený, napíš v sekcii Odporúčanie alebo Plán: „Na doplnenie lekárom.“
+- Nevymýšľaj nové diagnózy, vyšetrenia, liečbu ani kontroly.
 
-PRÍSNE PRAVIDLÁ:
+PRÍSNE ZÁKAZY:
 - Nevymýšľaj si fakty.
 - Nevymýšľaj si lieky ani dávkovanie.
 - Nevymýšľaj si normálny neurologický nález, ak nebol uvedený.
-- Zachovaj negácie.
-- Nezamieňaj subjektívne ťažkosti za objektívny nález.
-- Nepridávaj časti vyšetrenia, ktoré neboli uvedené.
-- Výsledky CT/MR/lab/EEG/EMG uveď iba vtedy, ak boli uvedené v zdrojovom texte alebo audiu.
+- Nevymýšľaj MR, CT, laboratóriá, obstreky, operáciu ani hospitalizáciu, ak neboli uvedené.
+- Nezamieňaj subjektívne ťažkosti pacienta za objektívny nález.
+- Nepridávaj časti neurologického vyšetrenia, ktoré neboli uvedené.
+- Ak informácia chýba, napíš „neudané“ alebo „Na doplnenie lekárom“, podľa sekcie.
 
-DETAILNÁ ANALÝZA:
-Daj ju až za hlavný výstup.
+DÔLEŽITÉ PRI NEJASNOM DIKTÁTE:
+- Ak lekár povie dve časové možnosti, napr. „dva dni, respektíve päť dní“, v hlavnom texte použi bezpečnú formuláciu „v posledných dňoch“ a neistotu vysvetli dole.
+- Ak lekár povie nepresný alebo chaotický diktát, urob z neho klinicky čistý text.
+- Ak sa objaví nesprávny prepis ako „traumatický príjem“, ale z kontextu ide o lumbosakrálnu radikulopatiu bez traumy, nepíš traumatický príjem.
+- Pri lumbosakrálnej radikulopatii dávaj pozor na:
+  - trvanie ťažkostí,
+  - propagáciu bolesti,
+  - sfinktery,
+  - perianogenitálnu / intímnu citlivosť,
+  - Lasègue,
+  - motorický deficit,
+  - senzitivitu v dermatóme,
+  - indikáciu prijatia alebo MR, iba ak bola povedaná.
+
+============================================================
+DETAILNÁ ANALÝZA
+============================================================
+
+Detailnú analýzu daj až za hlavný výstup.
 
 KROK 1 — TRANSKRIPT:
 - Vytvor čo najpresnejší slovenský transkript.
@@ -520,13 +597,12 @@ KROK 1 — TRANSKRIPT:
 - Ak ide o diktát lekára, označ hovoriaceho ako Lekár / diktát.
 - Ak ide o rozhovor, rozdeľ hovoriacich ako Speaker 1, Speaker 2, Speaker 3.
 - Ak vieš, doplň približné časové úseky.
-- Nesumarizuj v tomto kroku.
+- Tu môže byť doslovnejší prepis, ale hlavný výstup musí byť klinicky upravený.
 
 KROK 2 — INFERENCIA ROLÍ:
 - Urči, kto je pravdepodobne Lekár, Pacient, Príbuzný alebo Iná osoba.
 - Uveď mieru istoty: vysoká / stredná / nízka.
 - Krátko vysvetli prečo.
-- Ak ide iba o diktát lekára alebo manuálne poznámky, napíš to jasne.
 
 KROK 3 — KLINICKÉ FAKTY:
 Vypíš fakty, ktoré boli uvedené:
@@ -552,6 +628,10 @@ KROK 5 — KONTROLA KVALITY / NEISTOTY:
 - Nenavrhuj nové diagnózy, vyšetrenia ani liečbu, ak neboli uvedené v zdrojovom texte.
 """
 
+
+# ============================================================
+# SPRACOVANIE
+# ============================================================
 
 st.subheader("3. Spracovanie")
 
